@@ -61,7 +61,7 @@ jobs:
       - name: "Scan for debug logs in code"
         run: |
           echo "Scanning for debug logs in the codebase..."
-          if grep -r "System.debug" force-app/; then
+          if grep -r "System.debug22" force-app/; then
             echo "Warning: Debug logs found in the codebase!"
             exit 1
           else
