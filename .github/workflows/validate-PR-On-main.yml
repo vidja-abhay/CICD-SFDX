@@ -17,15 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: "Read PR Body"
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          echo "$PR_BODY" > ./pr_body.txt
-          node ./parsePR.js
-          TESTS=$(cat testsToRun.txt)
-          echo "APEX_TESTS=$TESTS" >> $GITHUB_ENV
-
       - name: "Cache SFDX CLI packages"
         id: cache-sfdx
         uses: actions/cache@v3
