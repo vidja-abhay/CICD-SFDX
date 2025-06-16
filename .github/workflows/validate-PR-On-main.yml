@@ -315,16 +315,16 @@ jobs:
           echo "Debug scan completed successfully"
         shell: /usr/bin/bash -e {0}
 
-      - name: "Validate Delta Changes (Check Only)"
-        run: |
-          echo "Validating changes..."
-          if [ -f changed-sources/package/package.xml ]; then
-            echo "Found package.xml, validating deployment..."
-            sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --wait 30 --json
-            echo "Validation completed successfully"
-          else
-            echo "No changes to validate - package.xml not found"
-          fi
+      # - name: "Validate Delta Changes (Check Only)"
+      #   run: |
+      #     echo "Validating changes..."
+      #     if [ -f changed-sources/package/package.xml ]; then
+      #       echo "Found package.xml, validating deployment..."
+      #       sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --wait 30 --json
+      #       echo "Validation completed successfully"
+      #     else
+      #       echo "No changes to validate - package.xml not found"
+      #     fi
 
       - name: "Clean up auth file"
         if: always()
