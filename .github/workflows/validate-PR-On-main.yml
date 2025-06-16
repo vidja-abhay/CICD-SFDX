@@ -132,15 +132,45 @@ jobs:
           mkdir changed-sources
           sf sgd:source:delta --to "HEAD" --from "origin/main" --output changed-sources/ --generate-delta --source force-app/
 
-      - name: "Scan for debug logs in code"
+      # - name: "Scan for debug logs in code"
+      #   run: |
+      #     echo "Scanning for debug logs in the codebase..."
+      #     if grep -r "System.debug" force-app/; then
+      #       echo "Warning: Debug logs found in the codebase!"
+      #       exit 1
+      #     else
+      #       echo "No debug logs found."
+      #     fi
+
+      - name: "Scan for inappropriate debug logs in code"
         run: |
-          echo "Scanning for debug logs in the codebase..."
-          if grep -r "System.debug" force-app/; then
-            echo "Warning: Debug logs found in the codebase!"
+          echo "Scanning for inappropriate debug logs..."
+          
+          # Check for common debug patterns that shouldn't be in production
+          DEBUG_PATTERNS=(
+            "System\.debug\s*\(\s*['\"]TODO"
+            "System\.debug\s*\(\s*['\"]FIXME"
+            "System\.debug\s*\(\s*['\"]DEBUG"
+            "System\.debug\s*\(\s*['\"]TEST"
+            "console\.log"
+          )
+          
+          FOUND_ISSUES=false
+          
+          for pattern in "${DEBUG_PATTERNS[@]}"; do
+            if grep -r -E "$pattern" force-app/; then
+              echo "Found inappropriate debug pattern: $pattern"
+              FOUND_ISSUES=true
+            fi
+          done
+          
+          if [ "$FOUND_ISSUES" = true ]; then
+            echo "Error: Inappropriate debug statements found!"
             exit 1
           else
-            echo "No debug logs found."
+            echo "No inappropriate debug patterns found."
           fi
+        shell: /usr/bin/bash -e {0}
 
       - name: "Validate Delta Changes (Check Only)"
         run: |
