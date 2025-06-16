@@ -1,4 +1,78 @@
-name: Validate to main branch
+# name: Validate to main branch
+
+# on:
+#   pull_request:
+#     types: [opened, synchronize]
+#     branches: [main]
+#     paths:
+#       - "force-app/**"
+
+# jobs:
+#   deployment-on-main-org:
+#     runs-on: ubuntu-latest
+#     if: ${{ github.actor != 'dependabot[bot]' }}
+#     steps:
+#       - name: "Checkout source code"
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: "Cache SFDX CLI packages"
+#         id: cache-sfdx
+#         uses: actions/cache@v3
+#         env:
+#           cache-name: cache-sfdx-cli-modules
+#         with:
+#           path: ~/sf
+#           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/sfdx-project.json') }}
+
+#       - name: "Install Salesforce CLI"
+#         if: ${{ steps.cache-sfdx.outputs.cache-hit != 'true' }}
+#         run: |
+#           wget https://developer.salesforce.com/media/salesforce-cli/sf/channels/stable/sf-linux-x64.tar.xz
+#           mkdir -p ~/sf
+#           tar xJf sf-linux-x64.tar.xz -C ~/sf --strip-components 1
+#           echo "$HOME/sf/bin" >> $GITHUB_PATH
+#           ~/sf/bin/sf version
+
+#       - name: "Update SFDX"
+#         if: ${{ steps.cache-sfdx.outputs.cache-hit == 'true' }}
+#         run: |
+#           echo "$HOME/sf/bin" >> $GITHUB_PATH
+#           ~/sf/bin/sf version
+
+#       - name: "Installing sfdx git delta"
+#         run: |
+#           echo y | sf plugins:install sfdx-git-delta
+#           sf plugins
+
+#       - name: "Populate auth file with SFDX_URL secret of integration org"
+#         run: |
+#           echo ${{ secrets.SFDX_INTEGRATION_URL }} > ./SFDX_INTEGRATION_URL.txt
+
+#       - name: "Authenticate to Integration Org"
+#         run: sf org login sfdx-url -f ./SFDX_INTEGRATION_URL.txt -s -a integration
+
+#       - name: "Create delta packages for new, modified or deleted metadata"
+#         run: |
+#           mkdir changed-sources
+#           sf sgd:source:delta --to "HEAD" --from "HEAD^" --output changed-sources/ --generate-delta --source force-app/
+
+#       - name: "Scan for debug logs in code"
+#         run: |
+#           echo "Scanning for debug logs in the codebase..."
+#           if grep -r "System.debug22" force-app/; then
+#             echo "Warning: Debug logs found in the codebase!"
+#             exit 1
+#           else
+#             echo "No debug logs found."
+#           fi
+#         shell: /usr/bin/bash -e {0}
+
+     
+      
+# Workflow for validation on PR
+name: Validate PR to main branch
 
 on:
   pull_request:
@@ -8,7 +82,7 @@ on:
       - "force-app/**"
 
 jobs:
-  deployment-on-main-org:
+  validate-deployment:
     runs-on: ubuntu-latest
     if: ${{ github.actor != 'dependabot[bot]' }}
     steps:
@@ -46,28 +120,33 @@ jobs:
           echo y | sf plugins:install sfdx-git-delta
           sf plugins
 
-      - name: "Populate auth file with SFDX_URL secret of integration org"
+      - name: "Populate auth file with SFDX_URL secret"
         run: |
           echo ${{ secrets.SFDX_INTEGRATION_URL }} > ./SFDX_INTEGRATION_URL.txt
 
-      - name: "Authenticate to Integration Org"
+      - name: "Authenticate to Salesforce Org"
         run: sf org login sfdx-url -f ./SFDX_INTEGRATION_URL.txt -s -a integration
 
       - name: "Create delta packages for new, modified or deleted metadata"
         run: |
           mkdir changed-sources
-          sf sgd:source:delta --to "HEAD" --from "HEAD^" --output changed-sources/ --generate-delta --source force-app/
+          sf sgd:source:delta --to "HEAD" --from "origin/main" --output changed-sources/ --generate-delta --source force-app/
 
       - name: "Scan for debug logs in code"
         run: |
           echo "Scanning for debug logs in the codebase..."
-          if grep -r "System.debug22" force-app/; then
+          if grep -r "System.debug" force-app/; then
             echo "Warning: Debug logs found in the codebase!"
             exit 1
           else
             echo "No debug logs found."
           fi
-        shell: /usr/bin/bash -e {0}
 
-     
-      
+      - name: "Validate Delta Changes (Check Only)"
+        run: |
+          echo "Validating changes..."
+          if [ -f changed-sources/package/package.xml ]; then
+            sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --json
+          else
+            echo "No changes to validate"
+          fi
