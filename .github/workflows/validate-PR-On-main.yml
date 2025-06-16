@@ -71,6 +71,116 @@
 
      
       
+# # Workflow for validation on PR
+# name: Validate PR to main branch
+
+# on:
+#   pull_request:
+#     types: [opened, synchronize]
+#     branches: [main]
+#     paths:
+#       - "force-app/**"
+
+# jobs:
+#   validate-deployment:
+#     runs-on: ubuntu-latest
+#     if: ${{ github.actor != 'dependabot[bot]' }}
+#     steps:
+#       - name: "Checkout source code"
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: "Cache SFDX CLI packages"
+#         id: cache-sfdx
+#         uses: actions/cache@v3
+#         env:
+#           cache-name: cache-sfdx-cli-modules
+#         with:
+#           path: ~/sf
+#           key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/sfdx-project.json') }}
+
+#       - name: "Install Salesforce CLI"
+#         if: ${{ steps.cache-sfdx.outputs.cache-hit != 'true' }}
+#         run: |
+#           wget https://developer.salesforce.com/media/salesforce-cli/sf/channels/stable/sf-linux-x64.tar.xz
+#           mkdir -p ~/sf
+#           tar xJf sf-linux-x64.tar.xz -C ~/sf --strip-components 1
+#           echo "$HOME/sf/bin" >> $GITHUB_PATH
+#           ~/sf/bin/sf version
+
+#       - name: "Update SFDX"
+#         if: ${{ steps.cache-sfdx.outputs.cache-hit == 'true' }}
+#         run: |
+#           echo "$HOME/sf/bin" >> $GITHUB_PATH
+#           ~/sf/bin/sf version
+
+#       - name: "Installing sfdx git delta"
+#         run: |
+#           echo y | sf plugins:install sfdx-git-delta
+#           sf plugins
+
+#       - name: "Populate auth file with SFDX_URL secret"
+#         run: |
+#           echo ${{ secrets.SFDX_INTEGRATION_URL }} > ./SFDX_INTEGRATION_URL.txt
+
+#       - name: "Authenticate to Salesforce Org"
+#         run: sf org login sfdx-url -f ./SFDX_INTEGRATION_URL.txt -s -a integration
+
+#       - name: "Create delta packages for new, modified or deleted metadata"
+#         run: |
+#           mkdir changed-sources
+#           sf sgd:source:delta --to "HEAD" --from "origin/main" --output changed-sources/ --generate-delta --source force-app/
+
+#       # - name: "Scan for debug logs in code"
+#       #   run: |
+#       #     echo "Scanning for debug logs in the codebase..."
+#       #     if grep -r "System.debug" force-app/; then
+#       #       echo "Warning: Debug logs found in the codebase!"
+#       #       exit 1
+#       #     else
+#       #       echo "No debug logs found."
+#       #     fi
+
+#       - name: "Scan for inappropriate debug logs in code"
+#         run: |
+#           echo "Scanning for inappropriate debug logs..."
+          
+#           # Check for common debug patterns that shouldn't be in production
+#           DEBUG_PATTERNS=(
+#             "System\.debug\s*\(\s*['\"]TODO"
+#             "System\.debug\s*\(\s*['\"]FIXME"
+#             "System\.debug\s*\(\s*['\"]DEBUG"
+#             "System\.debug\s*\(\s*['\"]TEST"
+#             "console\.log"
+#           )
+          
+#           FOUND_ISSUES=false
+          
+#           for pattern in "${DEBUG_PATTERNS[@]}"; do
+#             if grep -r -E "$pattern" force-app/; then
+#               echo "Found inappropriate debug pattern: $pattern"
+#               FOUND_ISSUES=true
+#             fi
+#           done
+          
+#           if [ "$FOUND_ISSUES" = true ]; then
+#             echo "Error: Inappropriate debug statements found!"
+#             exit 1
+#           else
+#             echo "No inappropriate debug patterns found."
+#           fi
+#         shell: /usr/bin/bash -e {0}
+
+#       - name: "Validate Delta Changes (Check Only)"
+#         run: |
+#           echo "Validating changes..."
+#           if [ -f changed-sources/package/package.xml ]; then
+#             sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --json
+#           else
+#             echo "No changes to validate"
+#           fi
+
 # Workflow for validation on PR
 name: Validate PR to main branch
 
@@ -132,51 +242,231 @@ jobs:
           mkdir changed-sources
           sf sgd:source:delta --to "HEAD" --from "origin/main" --output changed-sources/ --generate-delta --source force-app/
 
-      # - name: "Scan for debug logs in code"
-      #   run: |
-      #     echo "Scanning for debug logs in the codebase..."
-      #     if grep -r "System.debug" force-app/; then
-      #       echo "Warning: Debug logs found in the codebase!"
-      #       exit 1
-      #     else
-      #       echo "No debug logs found."
-      #     fi
-
-      - name: "Scan for inappropriate debug logs in code"
+      - name: "Scan for debug statements in code"
         run: |
-          echo "Scanning for inappropriate debug logs..."
+          echo "Scanning for debug statements in the codebase..."
           
-          # Check for common debug patterns that shouldn't be in production
-          DEBUG_PATTERNS=(
-            "System\.debug\s*\(\s*['\"]TODO"
-            "System\.debug\s*\(\s*['\"]FIXME"
-            "System\.debug\s*\(\s*['\"]DEBUG"
-            "System\.debug\s*\(\s*['\"]TEST"
-            "console\.log"
+          # Initialize flags
+          FOUND_SYSTEM_DEBUG=false
+          FOUND_CONSOLE_LOG=false
+          FOUND_INAPPROPRIATE=false
+          
+          # Check for System.debug statements in Apex files
+          echo "Checking for System.debug statements in Apex files..."
+          if find force-app/ -name "*.cls" -o -name "*.trigger" | xargs grep -l "System\.debug" 2>/dev/null; then
+            echo "Found System.debug statements in Apex files"
+            FOUND_SYSTEM_DEBUG=true
+          fi
+          
+          # Check for console.log statements in JavaScript files
+          echo "Checking for console.log statements in JavaScript files..."
+          if find force-app/ -name "*.js" | xargs grep -l "console\.log" 2>/dev/null; then
+            echo "Found console.log statements in JavaScript files"
+            FOUND_CONSOLE_LOG=true
+          fi
+          
+          # Check for inappropriate debug patterns that should block deployment
+          echo "Checking for inappropriate debug patterns..."
+          INAPPROPRIATE_PATTERNS=(
+            "System\.debug.*TODO"
+            "System\.debug.*FIXME"
+            "System\.debug.*DEBUG"
+            "System\.debug.*TEST"
+            "console\.log.*TODO"
+            "console\.log.*FIXME"
+            "console\.log.*DEBUG"
+            "console\.log.*TEST"
+            "debugger;"
+            "alert\("
+            "console\.error.*test"
+            "console\.warn.*test"
           )
           
-          FOUND_ISSUES=false
-          
-          for pattern in "${DEBUG_PATTERNS[@]}"; do
-            if grep -r -E "$pattern" force-app/; then
+          for pattern in "${INAPPROPRIATE_PATTERNS[@]}"; do
+            if find force-app/ -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*.js" \) | xargs grep -i -E "$pattern" 2>/dev/null; then
               echo "Found inappropriate debug pattern: $pattern"
-              FOUND_ISSUES=true
+              FOUND_INAPPROPRIATE=true
             fi
           done
           
-          if [ "$FOUND_ISSUES" = true ]; then
-            echo "Error: Inappropriate debug statements found!"
-            exit 1
-          else
-            echo "No inappropriate debug patterns found."
+          # Summary and decision
+          echo "=== Debug Scan Summary ==="
+          if [ "$FOUND_SYSTEM_DEBUG" = true ]; then
+            echo "⚠️  System.debug statements found in Apex code"
           fi
+          
+          if [ "$FOUND_CONSOLE_LOG" = true ]; then
+            echo "⚠️  console.log statements found in JavaScript code"
+          fi
+          
+          if [ "$FOUND_INAPPROPRIATE" = true ]; then
+            echo "❌ Inappropriate debug statements found - blocking deployment"
+            echo "Please remove debug statements with TODO, FIXME, DEBUG, TEST, or debugger statements"
+            exit 1
+          fi
+          
+          if [ "$FOUND_SYSTEM_DEBUG" = true ] || [ "$FOUND_CONSOLE_LOG" = true ]; then
+            echo "⚠️  Debug statements found but not blocking deployment"
+            echo "Consider removing debug statements for production code"
+          else
+            echo "✅ No debug statements found"
+          fi
+          
+          echo "Debug scan completed successfully"
         shell: /usr/bin/bash -e {0}
 
       - name: "Validate Delta Changes (Check Only)"
         run: |
           echo "Validating changes..."
           if [ -f changed-sources/package/package.xml ]; then
-            sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --json
+            echo "Found package.xml, validating deployment..."
+            sf project deploy start -x changed-sources/package/package.xml --dry-run --test-level RunLocalTests --wait 30 --json
+            echo "Validation completed successfully"
           else
-            echo "No changes to validate"
+            echo "No changes to validate - package.xml not found"
           fi
+
+      - name: "Clean up auth file"
+        if: always()
+        run: |
+          rm -f ./SFDX_INTEGRATION_URL.txt
+
+---
+
+# Workflow for actual deployment after PR merge
+name: Deploy to Salesforce
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "force-app/**"
+
+jobs:
+  deploy-to-salesforce:
+    runs-on: ubuntu-latest
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    steps:
+      - name: "Checkout source code"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Cache SFDX CLI packages"
+        id: cache-sfdx
+        uses: actions/cache@v3
+        env:
+          cache-name: cache-sfdx-cli-modules
+        with:
+          path: ~/sf
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/sfdx-project.json') }}
+
+      - name: "Install Salesforce CLI"
+        if: ${{ steps.cache-sfdx.outputs.cache-hit != 'true' }}
+        run: |
+          wget https://developer.salesforce.com/media/salesforce-cli/sf/channels/stable/sf-linux-x64.tar.xz
+          mkdir -p ~/sf
+          tar xJf sf-linux-x64.tar.xz -C ~/sf --strip-components 1
+          echo "$HOME/sf/bin" >> $GITHUB_PATH
+          ~/sf/bin/sf version
+
+      - name: "Update SFDX"
+        if: ${{ steps.cache-sfdx.outputs.cache-hit == 'true' }}
+        run: |
+          echo "$HOME/sf/bin" >> $GITHUB_PATH
+          ~/sf/bin/sf version
+
+      - name: "Installing sfdx git delta"
+        run: |
+          echo y | sf plugins:install sfdx-git-delta
+          sf plugins
+
+      - name: "Populate auth file with SFDX_URL secret"
+        run: |
+          echo ${{ secrets.SFDX_INTEGRATION_URL }} > ./SFDX_INTEGRATION_URL.txt
+
+      - name: "Authenticate to Salesforce Org"
+        run: sf org login sfdx-url -f ./SFDX_INTEGRATION_URL.txt -s -a integration
+
+      - name: "Create delta packages for new, modified or deleted metadata"
+        run: |
+          mkdir changed-sources
+          sf sgd:source:delta --to "HEAD" --from "HEAD^" --output changed-sources/ --generate-delta --source force-app/
+
+      - name: "Final debug scan before deployment"
+        run: |
+          echo "Performing final debug scan before deployment..."
+          
+          # More strict patterns for production deployment
+          PRODUCTION_BLOCK_PATTERNS=(
+            "System\.debug.*TODO"
+            "System\.debug.*FIXME"
+            "System\.debug.*DEBUG"
+            "System\.debug.*TEST"
+            "console\.log.*TODO"
+            "console\.log.*FIXME"
+            "console\.log.*DEBUG"
+            "console\.log.*TEST"
+            "debugger;"
+            "alert\("
+            "console\.trace"
+            "console\.error.*test"
+            "console\.warn.*test"
+          )
+          
+          FOUND_PRODUCTION_ISSUES=false
+          
+          for pattern in "${PRODUCTION_BLOCK_PATTERNS[@]}"; do
+            if find force-app/ -type f \( -name "*.cls" -o -name "*.trigger" -o -name "*.js" \) | xargs grep -i -E "$pattern" 2>/dev/null; then
+              echo "❌ Found production-blocking debug pattern: $pattern"
+              FOUND_PRODUCTION_ISSUES=true
+            fi
+          done
+          
+          if [ "$FOUND_PRODUCTION_ISSUES" = true ]; then
+            echo "❌ Production deployment blocked due to inappropriate debug statements"
+            exit 1
+          fi
+          
+          echo "✅ Final debug scan passed - proceeding with deployment"
+
+      - name: "Deploy Delta Changes to Salesforce"
+        run: |
+          echo "Starting deployment to Salesforce..."
+          if [ -f changed-sources/package/package.xml ]; then
+            echo "Found changes to deploy"
+            
+            # Check if destructive changes exist
+            DESTRUCTIVE_CHANGES=""
+            if [ -f changed-sources/destructiveChanges/destructiveChanges.xml ]; then
+              DESTRUCTIVE_CHANGES="--post-destructive-changes changed-sources/destructiveChanges/destructiveChanges.xml"
+              echo "Found destructive changes to apply"
+            fi
+            
+            # Deploy with proper error handling
+            sf project deploy start \
+              -x changed-sources/package/package.xml \
+              $DESTRUCTIVE_CHANGES \
+              --test-level RunLocalTests \
+              --wait 30 \
+              --json || {
+                echo "❌ Deployment failed"
+                sf project deploy report --json
+                exit 1
+              }
+            
+            echo "✅ Deployment completed successfully"
+          else
+            echo "No changes to deploy - package.xml not found"
+          fi
+
+      - name: "Deploy Status Check"
+        run: |
+          echo "Checking final deployment status..."
+          sf project deploy report --json
+          echo "✅ Deployment status check completed"
+
+      - name: "Clean up auth file"
+        if: always()
+        run: |
+          rm -f ./SFDX_INTEGRATION_URL.txt
