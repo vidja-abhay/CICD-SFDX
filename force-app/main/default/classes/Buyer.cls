@@ -43,6 +43,7 @@ public class Buyer {
 
             System.debug('Buyer details fetched successfully: ' + wrapper);
 
+            System.debug('Hello');
             return wrapper;
 
         } catch (Exception e) {
@@ -116,7 +117,7 @@ public class Buyer {
             return pbs.Id;
         } catch (Exception e) {
             
-            // System.debug('Error creating Potential_Buyer_Seller__c record: ' + e.getMessage());
+            System.debug('Error creating Potential_Buyer_Seller__c record: ' + e.getMessage());
             
             throw new AuraHandledException('Error creating record: ' + e.getMessage());
         }
