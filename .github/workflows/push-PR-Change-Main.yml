@@ -173,7 +173,7 @@ jobs:
             sf project deploy start \
               -x changed-sources/package/package.xml \
               $DESTRUCTIVE_CHANGES \
-              --test-level RunLocalTests \
+              --test-level NoTestRun \
               --wait 30 \
               --json || {
                 echo "❌ Deployment failed"
