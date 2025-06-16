@@ -217,7 +217,7 @@ public class Buyer {
             
             return existingSellerIds;
         } catch (Exception e) {
-            System.debug('Error getting existing potential seller IDs: ' + e.getMessage());
+            // System.debug('Error getting existing potential seller IDs: ' + e.getMessage());
             return existingSellerIds;
         }
     }
