@@ -1,10 +1,10 @@
-public with sharing class contactDetailss {
+public with sharing class contactDetails {
     
     @AuraEnabled(cacheable=true)
     public static List<Contact> getContactList() {
         try {
             return [
-                SELECT Id,  Phone, AccountId 
+                SELECT Id, Name,  Phone, AccountId 
                 FROM Contact 
                 ORDER BY LastName ASC 
                 LIMIT 100
