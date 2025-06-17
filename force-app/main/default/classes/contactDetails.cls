@@ -3,6 +3,7 @@ public with sharing class contactDetails {
     @AuraEnabled(cacheable=true)
     public static List<Contact> getContactList() {
         try {
+            System.debug('Hello apex'+Userinfo.getUserId());
             return [
                 SELECT Id, Name,  Phone, AccountId 
                 FROM Contact 
