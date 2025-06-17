@@ -4,7 +4,7 @@ public with sharing class contactDetails {
     public static List<Contact> getContactList() {
         try {
             System.debug('Hello apex'+Userinfo.getUserId());
-            System.debug('Hello apex'+Userinfo.getUserId());
+           // System.debug('Hello apex'+Userinfo.getUserId());
             return [
                 SELECT Id, Name,  Phone, AccountId 
                 FROM Contact 
